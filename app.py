@@ -1,14 +1,33 @@
-from flask import Flask, render_template, request, jsonify, send_file, send_from_directory
-import pandas as pd
+import os
+import uuid
+from pathlib import Path
+
 import daft
+import pandas as pd
+from flask import (
+    Flask,
+    jsonify,
+    render_template,
+    request,
+    send_file,
+    send_from_directory,
+)
+
 from pipeline import process_dataframe_pipeline
 from timelapse import create_timelapse_video, get_batch_media_info
-from pathlib import Path
-import uuid
-import os
-from datetime import datetime
 
 app = Flask(__name__)
+
+# Configuration
+# Mapbox Access Token - Used for the interactive map feature
+# 
+# For production deployment:
+#   1. Get your own free token at: https://account.mapbox.com/access-tokens/
+#   2. Set the MAPBOX_ACCESS_TOKEN environment variable:
+#      export MAPBOX_ACCESS_TOKEN='your-token-here'
+# 
+# The token below is a default for development only
+MAPBOX_TOKEN = os.environ.get('MAPBOX_ACCESS_TOKEN', 'pk.eyJ1IjoiY3Jpc3N0bzM5IiwiYSI6ImNtZjNveHE0dzAwOWwybHF6OTNxeHJpZHAifQ.oEhiJlxp2k2Jpx_JVU1ivA')
 
 # Configure Flask to serve static files from output directory
 @app.route('/static/output/<path:filename>')
@@ -19,7 +38,7 @@ def serve_output_files(filename):
 @app.route('/')
 def index():
     """Serve the main UI page"""
-    return render_template('index.html')
+    return render_template('index.html', mapbox_token=MAPBOX_TOKEN)
 
 @app.route('/process', methods=['POST'])
 def process_coordinates():
@@ -103,7 +122,7 @@ def process_coordinates():
 @app.route('/results/<batch_id>')
 def results_page(batch_id):
     """Serve the results page with year slider"""
-    return render_template('results.html', batch_id=batch_id)
+    return render_template('results.html', batch_id=batch_id, mapbox_token=MAPBOX_TOKEN)
 
 @app.route('/api/get_image/<batch_id>/<int:year>')
 def get_image_content(batch_id, year):
