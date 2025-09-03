@@ -4,6 +4,10 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Time Capsule : Aerial View Generator</title>
+    <link href='https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.css' rel='stylesheet' />
+    <link rel='stylesheet' href='https://api.mapbox.com/mapbox-gl-js/plugins/mapbox-gl-geocoder/v5.0.0/mapbox-gl-geocoder.css' type='text/css' />
+    <script src='https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.js'></script>
+    <script src='https://api.mapbox.com/mapbox-gl-js/plugins/mapbox-gl-geocoder/v5.0.0/mapbox-gl-geocoder.min.js'></script>
     <style>
         * {
             margin: 0;
@@ -26,7 +30,7 @@
             border-radius: 20px;
             box-shadow: 0 15px 35px rgba(0, 0, 0, 0.1);
             padding: 40px;
-            max-width: 600px;
+            max-width: 900px;
             width: 100%;
         }
 
@@ -179,10 +183,77 @@
             margin-bottom: 10px;
             font-family: 'Courier New', monospace;
             font-size: 0.9em;
+            padding: 8px;
+            border-radius: 5px;
+            transition: background-color 0.2s ease;
+        }
+
+        .example-coords:hover {
+            background-color: #f0f0f0;
         }
 
         .example-coords span {
             color: #666;
+        }
+
+        .map-container {
+            margin-bottom: 30px;
+            border-radius: 10px;
+            overflow: hidden;
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
+        }
+
+        #map {
+            width: 100%;
+            height: 400px;
+        }
+
+        .mapboxgl-ctrl-geocoder {
+            width: 100%;
+            max-width: none;
+            box-shadow: none;
+            border: 2px solid #e1e5e9;
+            border-radius: 10px;
+            margin-bottom: 20px;
+        }
+
+        .mapboxgl-ctrl-geocoder--input {
+            font-size: 1.1em;
+            padding: 15px;
+            background: #f8f9fa;
+        }
+
+        .mapboxgl-ctrl-geocoder--input:focus {
+            outline: none;
+            background: white;
+        }
+
+        .marker-pin {
+            width: 30px;
+            height: 30px;
+            background: #667eea;
+            border: 3px solid white;
+            border-radius: 50%;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+            cursor: pointer;
+        }
+
+        .map-instructions {
+            text-align: center;
+            color: #666;
+            margin-bottom: 15px;
+            font-size: 1.05em;
+        }
+
+        .coordinates-display {
+            background: #f8f9fa;
+            border-radius: 8px;
+            padding: 12px;
+            margin-top: 15px;
+            font-family: 'Courier New', monospace;
+            font-size: 0.95em;
+            color: #333;
+            display: none;
         }
     </style>
 </head>
@@ -190,6 +261,17 @@
     <div class="container">
         <h1>🗺️ Time Capsule</h1>
         <p class="subtitle">Process geographic coordinates through the Daft pipeline</p>
+        
+        
+        <div id="geocoder"></div>
+        
+        <div class="map-container">
+            <div id="map"></div>
+        </div>
+        
+        <div class="coordinates-display" id="coordinatesDisplay">
+            Selected: <span id="selectedCoords"></span>
+        </div>
         
         <form id="coordinateForm">
             <div class="form-group">
@@ -247,6 +329,98 @@
     </div>
 
     <script>
+        // Initialize Mapbox with token from backend
+        mapboxgl.accessToken = '{{ mapbox_token }}';
+        
+        // Initialize the map
+        const map = new mapboxgl.Map({
+            container: 'map',
+            style: 'mapbox://styles/mapbox/streets-v12',
+            center: [-122.4194, 37.7749], // Default to San Francisco
+            zoom: 12
+        });
+
+        // Add navigation controls
+        map.addControl(new mapboxgl.NavigationControl(), 'top-right');
+
+        // Initialize the geocoder
+        const geocoder = new MapboxGeocoder({
+            accessToken: mapboxgl.accessToken,
+            mapboxgl: mapboxgl,
+            marker: false,
+            placeholder: 'Search for a location...'
+        });
+
+        // Add geocoder to the page
+        document.getElementById('geocoder').appendChild(geocoder.onAdd(map));
+
+        // Create a marker
+        let currentMarker = null;
+
+        // Function to update coordinates
+        function updateCoordinates(lng, lat, updateAltitude = true) {
+            // Update form fields
+            document.getElementById('latitude').value = lat.toFixed(6);
+            document.getElementById('longitude').value = lng.toFixed(6);
+            
+            // Set default altitude if updating
+            if (updateAltitude) {
+                document.getElementById('altitude').value = 50;
+            }
+            
+            // Update display
+            const coordsDisplay = document.getElementById('coordinatesDisplay');
+            const selectedCoords = document.getElementById('selectedCoords');
+            coordsDisplay.style.display = 'block';
+            selectedCoords.textContent = `${lat.toFixed(6)}, ${lng.toFixed(6)}`;
+            
+            // Remove existing marker
+            if (currentMarker) {
+                currentMarker.remove();
+            }
+            
+            // Add new marker
+            const el = document.createElement('div');
+            el.className = 'marker-pin';
+            
+            currentMarker = new mapboxgl.Marker(el)
+                .setLngLat([lng, lat])
+                .addTo(map);
+        }
+
+        // Handle map clicks
+        map.on('click', (e) => {
+            updateCoordinates(e.lngLat.lng, e.lngLat.lat);
+        });
+
+        // Handle geocoder results
+        geocoder.on('result', (e) => {
+            const [lng, lat] = e.result.center;
+            updateCoordinates(lng, lat);
+            
+            // Zoom to the selected location
+            map.flyTo({
+                center: [lng, lat],
+                zoom: 14
+            });
+        });
+
+        // Update map when form fields change manually
+        ['latitude', 'longitude'].forEach(field => {
+            document.getElementById(field).addEventListener('change', function() {
+                const lat = parseFloat(document.getElementById('latitude').value);
+                const lng = parseFloat(document.getElementById('longitude').value);
+                
+                if (!isNaN(lat) && !isNaN(lng)) {
+                    updateCoordinates(lng, lat, false);
+                    map.flyTo({
+                        center: [lng, lat],
+                        zoom: 14
+                    });
+                }
+            });
+        });
+
         document.getElementById('coordinateForm').addEventListener('submit', async function(e) {
             e.preventDefault();
             
@@ -330,13 +504,25 @@
         });
 
         // Example coordinate buttons
-        document.addEventListener('click', function(e) {
-            if (e.target.classList.contains('example-coords')) {
-                const coords = e.target.querySelector('span:last-child').textContent.split(', ');
-                document.getElementById('latitude').value = coords[0];
-                document.getElementById('longitude').value = coords[1];
-                document.getElementById('altitude').value = coords[2].replace('m', '');
-            }
+        document.querySelectorAll('.example-coords').forEach(example => {
+            example.style.cursor = 'pointer';
+            example.addEventListener('click', function() {
+                const coords = this.querySelector('span:last-child').textContent.split(', ');
+                const lat = parseFloat(coords[0]);
+                const lng = parseFloat(coords[1]);
+                const alt = parseFloat(coords[2].replace('m', ''));
+                
+                document.getElementById('latitude').value = lat;
+                document.getElementById('longitude').value = lng;
+                document.getElementById('altitude').value = alt;
+                
+                // Update map
+                updateCoordinates(lng, lat, false);
+                map.flyTo({
+                    center: [lng, lat],
+                    zoom: 14
+                });
+            });
         });
     </script>
 </body>
